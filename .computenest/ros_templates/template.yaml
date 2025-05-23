@@ -274,25 +274,42 @@ Resources:
       Timeout: 3600
       CommandContent: |-
         #!/bin/bash
-        # 安装docker
-        yum-config-manager --add-repo http://mirrors.aliyun.com/docker-ce/linux/centos/docker-ce.repo
-        yum makecache fast
-        yum install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin jq
-        systemctl enable docker
-        systemctl start docker
+        SERVICE_NAME="spring-boot"
+        function install_docker() {
+          if command -v docker &> /dev/null; then
+            echo "docker已安装"
+          else
+            # 安装docker
+            yum-config-manager --add-repo http://mirrors.aliyun.com/docker-ce/linux/centos/docker-ce.repo
+            yum makecache fast
+            yum install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin jq
+            systemctl enable docker
+            systemctl start docker
+          fi
+        }
 
-        # dockerjsonConfig解析
-        dockerJson='{{ computenest::acr::dockerconfigjson }}'
-        decodeDockerJson=$(echo $dockerJson | base64 -d)
-        host=$(echo $decodeDockerJson | jq '.auths' | jq 'keys' | jq .[0])
-        username=$(echo $decodeDockerJson | jq ".auths.$host.username" | tr -d '"')
-        password=$(echo $decodeDockerJson | jq ".auths.$host.password" | tr -d '"')
-        host=$(echo $host | tr -d '"')
+        function stop_container() {
+          if [ "$(docker ps -a -q -f name=$SERVICE_NAME)" ]; then
+            echo "停止并删除已有容器..."
+            docker stop $SERVICE_NAME
+            docker rm $SERVICE_NAME
+          fi
+        }
 
-        # 登录启动服务
-        docker login $host --username=$username --password=$password
-        docker pull {{ computenest::acrimage::demo }}
-        docker run -d -p 8080:8080 {{ computenest::acrimage::demo }}
+        function pull_image() {
+          mkdir ~/.docker
+          echo '{{ computenest::acr::dockerconfigjson }}' | base64 -d > ~/.docker/config.json
+          docker pull {{ computenest::acrimage::demo }}
+        }
+
+        function start_container() {
+          docker run --name $SERVICE_NAME -d -p 8080:8080 {{ computenest::acrimage::demo }}
+        }
+
+        install_docker
+        stop_container
+        pull_image
+        start_container
 Outputs:
   VisitUrl:
     Description:
